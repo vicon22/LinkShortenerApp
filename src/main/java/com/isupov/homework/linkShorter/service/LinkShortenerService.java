@@ -1,35 +1,35 @@
 package com.isupov.homework.linkShorter.service;
 
-// Основной класс приложения
 import com.isupov.homework.linkShorter.models.Link;
 import com.isupov.homework.linkShorter.models.User;
 
 import java.awt.Desktop;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.util.*;
-import java.io.*;
-import java.util.Scanner;
 
 public class LinkShortenerService {
 
-    // Параметры конфигурации
-    private static final long DEFAULT_EXPIRY_TIME;
+    private static final int DEFAULT_EXPIRY_TIME;
     private static final int DEFAULT_MAX_CLICKS;
-
-    private static final Scanner scanner = new Scanner(System.in);
+    private final Map<String, User> users = new HashMap<>();
+    private final Scanner scanner = new Scanner(System.in);
+    private String currentUserUuid;
 
     static {
-        long expiryTime;
+        int expiryTime;
         int maxClicks;
 
         Properties config = new Properties();
         try (InputStream input = new FileInputStream("config.properties")) {
             config.load(input);
-            expiryTime = Long.parseLong(config.getProperty("DEFAULT_EXPIRY_TIME", "60")) * 60 * 1000;
+            expiryTime = Integer.parseInt(config.getProperty("DEFAULT_EXPIRY_TIME", "60"));
             maxClicks = Integer.parseInt(config.getProperty("DEFAULT_MAX_CLICKS", "10"));
         } catch (IOException e) {
             System.out.println("Ошибка загрузки конфигурации! Установлены значения по умолчанию DEFAULT_EXPIRY_TIME - 60 минут. DEFAULT_MAX_CLICKS - 10");
-            expiryTime = 60 * 60 * 1000;
+            expiryTime = 60;
             maxClicks = 10;
         }
 
@@ -37,27 +37,6 @@ public class LinkShortenerService {
         DEFAULT_MAX_CLICKS = maxClicks;
     }
 
-    // Карта для хранения данных пользователей
-    private final Map<String, User> users = new HashMap<>();
-
-    // Генерация UUID для пользователя
-    public String generateUuid() {
-        return UUID.randomUUID().toString();
-    }
-
-    // Создание короткой ссылки
-    public String createShortLink(String uuid, String originalUrl, int userMaxClicks, long userExpiryTime) {
-        User user = users.computeIfAbsent(uuid, User::new);
-        int maxClicks = Math.max(userMaxClicks, DEFAULT_MAX_CLICKS);
-        long expiryTime = Math.min(userExpiryTime, DEFAULT_EXPIRY_TIME);
-
-        String shortUrl = "clck.ru/" + UUID.randomUUID().toString().substring(0, 6);
-        Link link = new Link(originalUrl, shortUrl, System.currentTimeMillis() + expiryTime, maxClicks);
-        user.getLinks().put(shortUrl, link);
-        return shortUrl;
-    }
-
-    // Переход по короткой ссылке
     public String accessShortLink(String shortUrl) {
         try {
             for (User user : users.values()) {
@@ -80,14 +59,6 @@ public class LinkShortenerService {
         return "Ссылка не найдена.";
     }
 
-    // Удаление старых ссылок
-    public void cleanUpExpiredLinks() {
-        for (User user : users.values()) {
-            user.getLinks().values().removeIf(Link::isExpired);
-        }
-    }
-
-    // Удаление ссылки пользователем
     public String deleteShortLink(String uuid, String shortUrl) {
         User user = users.get(uuid);
         if (user != null && user.getLinks().remove(shortUrl) != null) {
@@ -96,7 +67,6 @@ public class LinkShortenerService {
         return "Ссылка не найдена или вы не являетесь её владельцем.";
     }
 
-    // Изменение лимита переходов
     public String updateClickLimit(String uuid, String shortUrl, int newLimit) {
         User user = users.get(uuid);
         if (user != null) {
@@ -108,123 +78,19 @@ public class LinkShortenerService {
         }
         return "Ссылка не найдена или вы не являетесь её владельцем.";
     }
-
     public void run() {
-
         System.out.println("Добро пожаловать в сервис сокращения ссылок!");
-
-        String currentUserUuid = null;
 
         while (true) {
             if (currentUserUuid == null) {
-                System.out.println("""
-                        Введите команду:
-                        1. Войти по UUID
-                        2. Создать нового пользователя
-                        3. Выйти
-                        """);
-                System.out.print("Ваш выбор: ");
-                int userChoice = scanner.nextInt();
-                scanner.nextLine();
-
-                switch (userChoice) {
-                    case 1:
-                        System.out.print("Введите ваш UUID: ");
-                        String uuid = scanner.nextLine();
-                        if (users.containsKey(uuid)) {
-                            currentUserUuid = uuid;
-                            System.out.println("Успешный вход!");
-                        } else {
-                            System.out.println("Пользователь с таким UUID не найден.");
-                        }
-                        break;
-
-                    case 2:
-                        currentUserUuid = generateUuid();
-                        users.put(currentUserUuid, new User(currentUserUuid));
-                        System.out.println("Ваш новый UUID: " + currentUserUuid);
-                        break;
-
-                    case 3:
-                        System.out.println("Спасибо за использование сервиса!");
-                        scanner.close();
-                        return;
-
-                    default:
-                        System.out.println("Неверная команда. Попробуйте снова.");
-                }
+                showAuthMenu();
             } else {
-                System.out.println("""
-                        Введите команду:
-                        1. Создать ссылку
-                        2. Перейти по ссылке
-                        3. Удалить ссылку
-                        4. Изменить лимит переходов
-                        5. Выйти из аккаунта
-                        6. Завершить программу
-                        
-                        """);
-                System.out.print("Ваш выбор: ");
-                int choice = scanner.nextInt();
-                scanner.nextLine();
-
-                switch (choice) {
-                    case 1:
-                        System.out.print("Введите оригинальный URL: ");
-                        String originalUrl = scanner.nextLine();
-                        System.out.print("Введите максимальное количество переходов: ");
-                        int maxClicks = scanner.nextInt();
-                        System.out.print("Введите время жизни ссылки (в минутах): ");
-                        long expiryTime = scanner.nextLong() * 60 * 1000;
-                        scanner.nextLine();
-
-                        String shortLink = createShortLink(currentUserUuid, originalUrl, maxClicks, expiryTime);
-                        System.out.println("Короткая ссылка: " + shortLink);
-                        break;
-
-                    case 2:
-                        System.out.print("Введите короткую ссылку: ");
-                        String shortUrl = scanner.nextLine();
-                        String result = accessShortLink(shortUrl);
-                        System.out.println(result);
-                        break;
-
-                    case 3:
-                        System.out.print("Введите короткую ссылку для удаления: ");
-                        String linkToDelete = scanner.nextLine();
-                        String deleteResult = deleteShortLink(currentUserUuid, linkToDelete);
-                        System.out.println(deleteResult);
-                        break;
-
-                    case 4:
-                        System.out.print("Введите короткую ссылку для изменения лимита: ");
-                        String linkToUpdate = scanner.nextLine();
-                        System.out.print("Введите новый лимит переходов: ");
-                        int newLimit = scanner.nextInt();
-                        scanner.nextLine();
-                        String updateResult = updateClickLimit(currentUserUuid, linkToUpdate, newLimit);
-                        System.out.println(updateResult);
-                        break;
-
-                    case 5:
-                        System.out.println("Вы вышли из аккаунта.");
-                        currentUserUuid = null;
-                        break;
-
-                    case 6:
-                        System.out.println("Спасибо за использование сервиса!");
-                        scanner.close();
-                        return;
-
-                    default:
-                        System.out.println("Неверная команда. Попробуйте снова.");
-                }
+                showMainMenu();
             }
         }
     }
 
-    private String showAuthMenu() {
-        String currentUserUuid = null;
+    private void showAuthMenu() {
 
         System.out.println("""
                         Введите команду:
@@ -233,34 +99,132 @@ public class LinkShortenerService {
                         3. Выйти
                         """);
         System.out.print("Ваш выбор: ");
-        int userChoice = scanner.nextInt();
-        scanner.nextLine();
+        String choice = scanner.nextLine();
 
-        switch (userChoice) {
-            case 1:
-                System.out.print("Введите ваш UUID: ");
-                String uuid = scanner.nextLine();
-                if (users.containsKey(uuid)) {
-                    currentUserUuid = uuid;
-                    System.out.println("Успешный вход!");
-                } else {
-                    System.out.println("Пользователь с таким UUID не найден.");
-                }
+        switch (choice) {
+            case "1":
+                login();
                 break;
-
-            case 2:
-                currentUserUuid = generateUuid();
-                users.put(currentUserUuid, new User(currentUserUuid));
-                System.out.println("Ваш новый UUID: " + currentUserUuid);
+            case "2":
+                register();
                 break;
-
-            case 3:
-                System.out.println("Спасибо за использование сервиса!");
-                System.exit(0);
+            case "3":
+                exit();
             default:
                 System.out.println("Неверная команда. Попробуйте снова.");
         }
+    }
 
-        return currentUserUuid;
+    private void showMainMenu() {
+        System.out.println("""
+                        Введите команду:
+                        1. Создать ссылку
+                        2. Перейти по ссылке
+                        3. Удалить ссылку
+                        4. Изменить лимит переходов
+                        5. Выйти из аккаунта
+                        6. Завершить программу
+                        """);
+        System.out.print("Ваш выбор: ");
+        String choice = scanner.nextLine();
+
+        switch (choice) {
+            case "1":
+                createShortLink();
+                break;
+            case "2":
+                accessShortLink();
+                break;
+            case "3":
+                deleteLink();
+                break;
+            case "4":
+                changeLimit();
+                break;
+            case "5":
+                System.out.println("Вы вышли из аккаунта.");
+                currentUserUuid = null;
+                break;
+            case "6":
+                exit();
+            default:
+                System.out.println("Неверная команда. Попробуйте снова.");
+        }
+    }
+
+    private void login() {
+        System.out.print("Введите ваш UUID: ");
+        String uuid = scanner.nextLine();
+        if (users.containsKey(uuid)) {
+            currentUserUuid = uuid;
+            System.out.println("Успешный вход!");
+        } else {
+            System.out.println("Пользователь с таким UUID не найден.");
+        }
+    }
+
+    private void register() {
+        currentUserUuid = UUID.randomUUID().toString();;
+        users.put(currentUserUuid, new User(currentUserUuid));
+        System.out.println("Ваш новый UUID: " + currentUserUuid);
+    }
+
+    private void exit() {
+        System.out.println("До свидания!");
+        System.exit(0);
+    }
+
+    private void changeLimit() {
+        System.out.print("Введите короткую ссылку для изменения лимита: ");
+        String linkToUpdate = scanner.nextLine();
+        int newLimit = getIntFromTerminal("новый лимит переходов");
+        String updateResult = updateClickLimit(currentUserUuid, linkToUpdate, newLimit);
+        System.out.println(updateResult);
+    }
+
+    private void deleteLink() {
+        System.out.print("Введите короткую ссылку для удаления: ");
+        String linkToDelete = scanner.nextLine();
+        String deleteResult = deleteShortLink(currentUserUuid, linkToDelete);
+        System.out.println(deleteResult);
+    }
+
+    private void accessShortLink() {
+        System.out.print("Введите короткую ссылку: ");
+        String shortUrl = scanner.nextLine();
+        String result = accessShortLink(shortUrl);
+        System.out.println(result);
+    }
+
+    private void createShortLink() {
+        System.out.print("Введите оригинальный URL: ");
+        String originalUrl = scanner.nextLine();
+        int maxClicks = getIntFromTerminal("максимальное количество переходов");
+        int expiryTimeMinutes = getIntFromTerminal("время жизни ссылки (в минутах)");
+
+        String shortLink = createShortLink(currentUserUuid, originalUrl, maxClicks, expiryTimeMinutes);
+        System.out.println("Короткая ссылка: " + shortLink);
+    }
+
+    public String createShortLink(String uuid, String originalUrl, int userMaxClicks, int userExpiryTimeMinutes) {
+        User user = users.computeIfAbsent(uuid, User::new);
+        int maxClicks = Math.max(userMaxClicks, DEFAULT_MAX_CLICKS);
+        long expiryTimeMinutes = Math.min(userExpiryTimeMinutes, DEFAULT_EXPIRY_TIME);
+
+        String shortUrl = "clck.ru/" + UUID.randomUUID().toString().substring(0, 6);
+        Link link = new Link(originalUrl, shortUrl, System.currentTimeMillis() + expiryTimeMinutes * 60 * 1000, maxClicks);
+        user.getLinks().put(shortUrl, link);
+        return shortUrl;
+    }
+
+    private int getIntFromTerminal(String variableName) {
+        System.out.printf("Введите %s: ", variableName);
+        while (true) {
+            try {
+                return Integer.parseInt(scanner.nextLine());
+            } catch (Exception e) {
+                System.out.printf("Некорректный ввод! Введите %s еще раз: ", variableName);
+            }
+        }
     }
 }
