@@ -80,6 +80,7 @@ public class LinkShortenerService {
     }
     public void run() {
         System.out.println("Добро пожаловать в сервис сокращения ссылок!");
+        startCleanupTask();
 
         while (true) {
             if (currentUserUuid == null) {
@@ -224,6 +225,38 @@ public class LinkShortenerService {
                 return Integer.parseInt(scanner.nextLine());
             } catch (Exception e) {
                 System.out.printf("Некорректный ввод! Введите %s еще раз: ", variableName);
+            }
+        }
+    }
+
+    // Запуск фоновой очистки
+    public void startCleanupTask() {
+        Thread cleanupThread = new Thread(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(60000); // Интервал очистки: 1 минута
+                    cleanUpExpiredLinks();
+                } catch (InterruptedException e) {
+                    System.out.println("Фоновая очистка была прервана: " + e.getMessage());
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        });
+        cleanupThread.setDaemon(true);
+        cleanupThread.start();
+    }
+
+    // Автоматическое удаление старых ссылок
+    public void cleanUpExpiredLinks() {
+        for (User user : users.values()) {
+            Iterator<Map.Entry<String, Link>> iterator = user.getLinks().entrySet().iterator();
+            while (iterator.hasNext()) {
+                Map.Entry<String, Link> entry = iterator.next();
+                if (entry.getValue().isExpired()) {
+                    System.out.printf("Ссылка [%s] истекла. Удаление!%n", entry.getValue().getShortUrl());
+                    iterator.remove();
+                }
             }
         }
     }
